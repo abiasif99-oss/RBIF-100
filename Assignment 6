@@ -1,0 +1,332 @@
+import requests
+from Bio import SeqIO
+from Bio.SeqRecord import SeqRecord
+from Bio.Seq import Seq
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Import statements:
+# - requests: HTTP library for API calls. This leads to fetching data from web services. 
+# - Bio.SeqIO: Biopython module for reading/writing sequence files such as FASTA
+# - Bio.SeqRecord: Biopython class representing a sequence with metadata such as ID and description
+# - Bio.Seq: Biopython class representing biological sequences such as DNA and Protein
+# - pandas: Data analysis library used for dataframes
+# - matplotlibs: import plot building software
+
+# Constants defining the API endpoints for Ensembl services
+BIOMART_URL = "https://www.ensembl.org/biomart/martservice"
+# BioMart service URL for querying gene metadata
+ENSEMBL_REST = "https://rest.ensembl.org"
+# Ensembl REST API base url for sequence data
+
+FASTA_FILE_NAME = "human_genes.fasta"
+MOTIF_FILE_NAME = "motifs.txt"
+
+
+def get_gene_ids_from_biomart(species="hsapiens", limit=1000):
+# Args: 
+# species (str): Species identifier (default: "hspaiens" for human)
+# limit (int): Maximum number of gene IDs to return
+
+    """
+    Fetch a list of Ensembl gene IDs from the BioMart service.
+    """
+    query = f"""
+    <!DOCTYPE Query>
+    <Query virtualSchemaName="default" formatter="TSV" header="0" uniqueRows="1" count="" datasetConfigVersion="0.6">
+        <Dataset name="{species}_gene_ensembl" interface="default">
+            <Attribute name="ensembl_gene_id" />
+        </Dataset>
+    </Query>
+    """
+# XML query template for BioMart service
+# This query requests Ensembl gene IDS from the specified species dataset
+    response = requests.post(BIOMART_URL, data={"query": query})
+# Send POST request to BioMart service with this XML query
+    response.raise_for_status()
+# Raise an exception if the HTTP request failed
+    gene_ids = [line.strip() for line in response.text.splitlines() if line.strip()]
+# Process the response:
+# - Split response text by lines 
+# - Remove whitespace from each line
+# - Fileter out empty lines
+    return gene_ids[:limit]
+# Return only the first 'limit' number of gene IDs 
+
+def get_gene_sequence(gene_id):
+    """
+    Fetch the nucleotide sequence of a given gene ID.
+    """
+# Args: 
+# gene_id (str): Ensembl gene ID
+# Returns:
+# str or None: DNA sequence as string if successful, None if failed. 
+    url = f"{ENSEMBL_REST}/sequence/id/{gene_id}?type=genomic" 
+# Construct the REST API URL for sequence retrieval
+# The endpoint returns the genomic sequence for the given gene ID
+    r = requests.get(url, headers={"Content-Type": "application/json"})
+# Send GET request to Ensembl REST API 
+# Specify JSON content type in headers
+    if not r.ok:
+# Check if request was successful 
+        return None
+# Return None if request failed
+    try:
+# Parse JSON response and extract the sequence
+        return r.json()["seq"]
+    except KeyError:
+# Handle case where "seq" key is missing from response 
+        return None
+
+def save_sequences_to_fasta(records, output_file):
+    """
+    Save all SeqRecord objects to a FASTA file.
+    """
+# Args:
+# records (list): List of Bio.SeqRecod objects 
+# output_file (str): Path to output FASTA file
+
+    SeqIO.write(records, output_file, "fasta")
+# Uses BioPython's SeqIO.write to save sequences in FASTA format. 
+    print(f"Saved {len(records)} sequences to {output_file}")
+# Print confirmation message with number of sequences saved
+
+def data_loading(file_name):
+# Load and parse a FASTA format file into a dictionary of sequences.
+    
+# Args:
+# file_name (str): Path to the FASTA file
+# Returns:
+# dict: Dictionary with sequence IDs as keys and sequences as values
+    file = open(file_name, "r")
+# Open the file in read mode
+    data = file.read().split("\n")
+# Read entire file content and split into lines using newline as separator
+    file.close()
+# Close the file to free system resources
+    sequences_data = {}
+# Initialize empty dictionary to store sequences
+# Variables to track current sequence being processed
+    current_name = "" # Stores the current sequence identifier
+    current_value = "" # Stores the current sequence data
+    for i in data: 
+# Iterate through each line in the file
+        if i.startswith(">"):
+# Check if line is a header line
+            current_name = i.replace(">" , "").split()[0]
+# Extract sequence name from header line:
+# - Remove '>' character
+# - Split by whitespace and take first part
+            sequences_data[current_name] = current_value
+# Store the previous sequence before starting new one
+# Only store if we have a current name 
+            
+            current_value = ""
+# Reset current sequence value for new sequence
+        else:
+            current_value = current_value + i 
+# If line is sequence data (not header), append to current sequence
+    sequences_data[current_name] = current_value
+# Store the last sequence after loop completes
+    return sequences_data
+# Return the dictionary containing all sequences
+
+def sequences_filtering(sequences_data):
+# Filter sequences to keep only those longer than 100 nucleotides.
+# Args:
+# sequences_data (dict): Dictionary of sequence IDs to sequences
+# Returns:
+# dict: Filtered dictionary containing only sequences > 100 nucleotides
+    filtered_sequences_data = {}
+# Initialize empty dictionary for filtered sequences
+    for name,value in sequences_data.items():
+# Iterate through all sequences in the input data
+        if len(value) > 100:
+# Check if sequence length is greater than 100
+            filtered_sequences_data[name] = value
+# If condition met, add to filtered dictionary
+    return filtered_sequences_data
+# Return the filtered dictionary
+
+def calculate_GC_content(sequences_data):
+# Calculate GC content for each sequence.
+# GC content = (G count + C count) / total length
+# Args:
+# sequences_data (dict): Dictionary of sequence IDs to sequences
+# Returns:
+# dict: Dictionary with sequence IDs as keys and GC content as values
+    GC_content_data = {}
+# Initialize empty dictionary for GC content results
+    for name,value in sequences_data.items():
+# Iterate through all sequences
+        G_count = value.count("G")
+# Count occurrences of 'G' nucleotide in sequence
+        C_count = value.count("C")
+# Count occurrences of 'C' nucleotide in sequence
+        total = len(value)
+# Get total length of sequence
+        GC_content_data[name] = (G_count + C_count) / total 
+# Calculate GC content as proportion of G and C nucleotides
+    return GC_content_data
+# Return dictionary with GC content for each sequence
+
+def calculate_motif_frequencies(sequences_data, motifs_list):
+# Count occurrences of specific motifs in each sequence.
+# Args:
+# sequences_data (dict): Dictionary of sequence IDs to sequences
+# motifs_list (list): List of motifs to search for
+# Returns:
+# dict: Dictionary with sequence IDs as keys and lists of motif counts as values
+    motif_frequencies = {}
+# Initialize empty dictionary for motif frequency results
+    for seq, value in sequences_data.items():
+# Iterate through all sequences
+        seq_motif_frequency = []
+# Initialize empty list to store motif counts for current sequence
+        for i in motifs_list:
+# Iterate through each motif in the motif list
+            freq = value.count(i)
+# Count occurrences of current motif in current sequence
+            seq_motif_frequency.append(freq)
+# Add count to list for current sequence
+        motif_frequencies[seq] = seq_motif_frequency 
+# Store the list of motif counts for current sequence
+    return motif_frequencies
+# Return dictionary with motif frequencies
+
+def create_summary(sequences_data, GC_content_data, motif_frequencies, motifs_list):
+# Create a summary DataFrame and save it to CSV file.
+# Args:
+# sequences_data (dict): Dictionary of sequences
+# GC_content_data (dict): Dictionary of GC content values
+# motif_frequencies (dict): Dictionary of motif frequency lists
+# motifs_list (list): List of motif names for column headers
+    summary = []
+# Initialize empty list to store rows of summary data
+    for seq in sequences_data.keys():
+# Iterate through each sequence ID
+        row = []
+# Initialize empty list for current row data
+        value = sequences_data[seq]
+# Get sequence data for current sequence ID
+        GC_content = GC_content_data[seq]
+# Get GC content for current sequence ID        
+        seq_motif_frequency = motif_frequencies[seq]
+# Get motif frequencies for current sequence ID        
+        row.append(seq)
+# Add sequence ID as first column in the row        
+        row.append(len(value))
+# Add sequence length as second column in the row        
+        row.append(GC_content)
+# Add GC content as third column in the row        
+        row.extend(seq_motif_frequency)
+# Add all motif frequencies as subsequent columns in the row        
+        summary.append(row)
+# Add completed row to summary list        
+    columns = ["Sequence Ensembl ID", "Length", "GC Content"]
+# Define base column names for the DataFrame    
+    columns.extend(motifs_list)
+# Add motif names as additional column headers    
+    summary_df = pd.DataFrame(summary, columns = columns)
+# Create pandas DataFrame from summary data with specified column names    
+    return summary_df
+# Return the created DataFrame for further analysis
+    
+def create_visualizations(sequence_df, motifs_list):
+# Create and save visualizations for sequence analysis data
+# Args:
+# sequence_df (DataFrame): DataFrame containing sequence summary data
+# motifs_list (list): List of motif names for plotting    
+    plt.hist(sequence_df['GC Content'], bins=[i*0.05 for i in range(int(0.3/0.05), int(0.65/0.05) + 1)])
+# Create histogram of GC content with bins from 0.3 to 0.65 in 0.05 increments    
+    plt.xlabel('GC Content')
+# Set x-axis label for the histogram    
+    plt.ylabel('Frequency')
+# Set y-axis label for the histogram    
+    plt.title('Distribution of GC Content')
+# Set title for the histogram    
+    plt.savefig("Distribution_of_GC_Content.png", dpi = 300)
+# Save histogram as high-resolution PNG file (300 DPI)
+    print('Plot "Distribution of GC Content" saved successfully')
+# Print confirmation message for first plot    
+
+    mean_motifs = sequence_df[motifs_list].mean() 
+# Calculate mean frequency for each motif across all sequences
+
+    plt.figure(figsize=(10, 6))
+# Create new figure with specified dimensions    
+    plt.bar(mean_motifs.index, mean_motifs.values)
+# Create bar chart with motifs on x-axis and mean frequencies on y-axis    
+    plt.xlabel('Motifs')
+# Set x-axis label for the bar chart    
+    plt.ylabel('Mean Count')
+# Set y-axis label for the bar chart    
+    plt.title('Mean Count of Motifs')
+# Set title for the bar chart    
+    plt.xticks(rotation=45, ha='right')
+# Rotate x-axis labels 45 degrees and align to the right for better readability    
+    plt.tight_layout()
+# Adjust layout to prevent label clipping    
+    plt.savefig("Mean_Count_of_Motifs.png", dpi = 300)
+# Save bar chart as high-resolution PNG file     
+    print('Plot "Mean Count of Motifs" saved successfully')
+# Print confirmation message for second plot    
+
+def main():
+# Main function that orchestrates the entire workflow
+# - 1. Fetch gene IDs from BioMart
+# - 2. Retrieve sequences for each gene ID
+# - 3. Save sequences to a FASTA file
+    print("Fetching gene IDs from Ensembl BioMart...")
+    gene_ids = get_gene_ids_from_biomart(limit=1000)
+    print(f"Retrieved {len(gene_ids)} gene IDs.")
+# Get list of Gene IDs
+
+    records = []
+# Initialize empty list to store sequence records
+    print("Getting sequence data from Ensembl ID")
+    for i, gene_id in enumerate(gene_ids):
+# Iterates through each gene ID with progress bar
+        print(i + 1, gene_id)
+        seq = get_gene_sequence(gene_id)
+# Get genomic sequence for current gene ID 
+        if seq:
+# If sequence was successfully retrieved
+            record = SeqRecord(Seq(seq), id=gene_id)
+# Creates the SeqRecord object:
+# - Seq(seq): Creates a BioPython sequence object from the string
+# - id=gene_id: Set the sequence identifier to the gene ID
+            records.append(record)
+# Add the record to our collection
+
+    save_sequences_to_fasta(records, FASTA_FILE_NAME)
+# Save all collected sequences to a FASTA file
+
+    file = open(MOTIF_FILE_NAME, "r")
+# Open motifs file for reading    
+    motifs_list = file.read().split("\n")
+# Read motifs file and split by newlines to create list of motifs    
+
+    sequences_data = data_loading(FASTA_FILE_NAME)
+# Load sequences from the generated FASTA file    
+  
+    sequences_data = sequences_filtering(sequences_data)
+# Filter sequences to keep only those longer than 100 nucleotides    
+    
+    motif_frequencies = calculate_motif_frequencies(sequences_data, motifs_list)
+# Calculate frequency of each motif in each sequence    
+
+    GC_content_data = calculate_GC_content(sequences_data)
+# Calculate GC content for each sequence    
+   
+
+    sequence_df = create_summary(sequences_data, GC_content_data, motif_frequencies, motifs_list)
+# Create summary DataFrame combining all analysis results    
+    create_visualizations(sequence_df, motifs_list)
+# Generate and save visualization plots based on the summary data    
+
+
+if __name__ == "__main__":
+# Check if this script is being run directly
+    main()
+# Executes the main function when the script is being run directly
