@@ -1,0 +1,111 @@
+import pandas as pd
+# Loads the pandas library into my program. I can now use pd as a shortcut
+
+
+def data_loading(file_name):
+# Defines a function called data_loading that takes a file name as input. 
+    file = open(file_name, "r")
+# Opens the file in read mode
+    data = file.read().split("\n")
+# Reads the entire file content, splits it into lines using newline character \n as delimiter    
+    file.close()
+# Closes the file    
+
+    sequences_data = {}
+# Creates an empty dictionary to store sequences. (Keys: Sequence IDs Values: Sequences)     
+    current_name = ""
+    current_value = ""
+# Initializes variables to track the current sequence name and sequence data    
+    for i in data:
+# Loops through each line in the file data        
+        if i.startswith(">"):
+# Checks if the line starts with ">" (FASTA format header line)
+            current_name = i.replace(">" , "")
+# Extracts the sequence name by removing the ">" chracter            
+            sequences_data[current_name] = current_value
+# Stores the previous sequence in the dictionary. (Key: current_name, Value: current_value)            
+            
+            current_value = ""
+# Resets current value to prepare for the next sequence             
+        else:
+            current_value = current_value + i 
+# If its not a header line, appends the sequence_data to current value            
+    sequences_data[current_name] = current_value
+# Stores the last sequence in the dictionary after loop ends    
+    return sequences_data
+# Returns the complete dictionary of sequences
+
+
+def sequences_filtering(sequences_data):
+# Defines function that takes sequences dictionary as input    
+    filtered_sequences_data = {}
+# Creates empty dictionary for filtered sequences    
+    for name,value in sequences_data.items():
+# Loops through each sequence. (name = ID, value = sequence)         
+        if len(value) > 100:
+# Checks if sequence is greater than 100 nucleotides            
+            filtered_sequences_data[name] = value
+# If condition met, adds sequence to filtered dictionary            
+    return filtered_sequences_data
+# Returns the filtered dictionary
+
+
+def calculate_GC_content(sequences_data):
+# Defines function to calculate GC content    
+    GC_content_data = {}
+# Creates dictionary to store GC content for each sequence    
+    for name,value in sequences_data.items():
+# Loops through each sequence        
+        G_count = value.count("G")
+# Counts occurrence of G nucleotide        
+        C_count = value.count("C")
+# Counts occurrences of C nucleotide        
+        total = len(value)
+# Gets total length of the sequence        
+        GC_content_data[name] = (G_count + C_count) / total
+# Percentage calculation of data and stors it        
+    return GC_content_data
+# Returns dictionary with GC content values
+    
+def create_summary(filtered_sequences_data, GC_content_data):
+# Defines function that takes filtered sequences and GC content data    
+    summary = []
+# Creates empty list to store summary rows    
+    for seq in filtered_sequences_data.keys():
+# Loops through each sequence ID in filtered data        
+        row = []
+# Creates empty list for current row data        
+        value = filtered_sequences_data[seq]
+# Gets the sequence string        
+        GC_content = GC_content_data[seq]
+# Gets GC content for this sequence        
+        row.append(seq)
+        row.append(len(value))
+        row.append(GC_content)
+# Appends sequence ID, length, and GC content to the row        
+        summary.append(row)
+# Adds the completed row to summary list        
+    summary_df = pd.DataFrame(summary, columns = ["Sequence Name", "Length", "GC Content"])
+# Creates pandas dataframe from summary list with column name    
+    summary_df.to_csv("sequence_summary.csv", index  = False)
+# Saves DataFrame to CSV file without indices    
+
+
+if __name__ == "__main__":
+# Ensures code is only runs when code is executed directly    
+    file_name = "sequences.fasta"
+# Defines the file input name    
+    sequences_data = data_loading(file_name)
+# Step 1 creating a dictionary of sequences data    
+  
+
+    filtered_sequences_data = sequences_filtering(sequences_data) 
+# Step 2 filtering the sequence data based on the length of the nucloeotides
+
+
+    GC_content_data = calculate_GC_content(filtered_sequences_data)
+# Step 3 calculate GC content of the filtered sequence data
+
+
+    create_summary(filtered_sequences_data, GC_content_data)
+# Step 4 creating the summary.csv
