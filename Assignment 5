@@ -1,0 +1,174 @@
+import requests
+gene = "mc1r"
+# Query mygene.info API to find information about the MC1R gene in humans
+response = requests.get(f"http://mygene.info/v3/query?q={gene}&species=human&fields=ensembl")
+# Make API request to mygene.info to search for MC1R gene
+data = response.json()
+# Convert the API response from JSON format to Python dictionary
+data
+# Display the raw data (useful for debugging)
+data ["hits"] [0] ["ensembl"] ["gene"]
+# Navigate through the nested dictionary structure to extract the Ensembl gene ID
+# data["hits"] - gets the list of search results
+# [0] - gets the first (most relevant) result
+# ["ensembl"] - gets the Ensembl database information
+# ["gene"] - gets the actual Ensembl gene ID
+
+ensemble_id = data ["hits"] [0] ["ensembl"] ["gene"]
+# Store the Ensembl gene ID in a variable for later use
+
+server = "https://rest.ensembl.org"
+# Set up the Ensembl API server and endpoint to get the DNA sequence
+ext = f"/sequence/id/{ensemble_id}?"
+# Create the API endpoint URL using the Ensembl gene ID
+
+r = requests.get(server+ext,headers={ "Content-Type" : "text/plain"})
+# Make API request to Ensembl to get the DNA sequence in plain text format
+
+sequence = r.text
+# Extract the DNA sequence text from the response
+
+file_name = "mc1r_sequence.fasta"
+# Define the output filename for the FASTA file
+
+file = open(file_name, "w")
+# Open the file in write mode ('w' creates new file or overwrites existing one)
+
+file.write(f">{gene}\n")
+# Write the FASTA header line (starts with '>' followed by gene name)
+
+file.write(sequence[:-1])
+# Write the DNA sequence to the file, excluding the last character 
+# (sequence[:-1] removes the last character, often used to remove trailing newline)
+
+file.close()
+# Close the file to ensure all data is written and resources are freed
+start = "ATG"
+# Define the start codon (ATG) that marks the beginning of a protein-coding region
+stop = ["TAG",  "TAA", "TGA"]
+# Define the stop codons that mark the end of a protein-coding region
+nucleotides = []
+# Create an empty list to store information about all found ORFs
+# Each ORF will be stored as [length, start_index, stop_index]
+max_orf = 0
+# Variable to track the length of the longest ORF found
+i = 0
+# Initialize index variable to traverse through the DNA sequence
+while i < len(sequence):
+# Loop through the entire DNA sequence character by character
+  current = 0 # Length counter for current ORF
+  start_i = 0 # Start position of current ORF
+  stop_i = 0 # Stop position of current ORF
+# Initialize variables for current ORF analysis  
+  if sequence[i: i + 3] == start:
+# Check if current position starts with ATG (start codon)      
+    start_i = i
+# Store the start position of this ORF
+    while sequence[i: i + 3] not in stop and i < len(sequence):
+# Continue reading codons until we find a stop codon or reach end of sequence
+
+
+      current = current + 1
+# Increment length counter and move to next codon      
+      i = i + 1
+    else:
+# When stop codon found or end reached
+      i = i + 1 # Move past the current position
+      stop_i = i # Store the stop position
+      max_orf = max(current + 2, max_orf)
+# Calculate total ORF length (current counts codons, +2 for complete codon)      
+      nucleotides.append([current + 2, start_i, stop_i + 2])
+# Store ORF information: [length, start_index, stop_index]      
+
+  else:
+# If no start codon at current position, move to next position      
+    i = i + 1
+
+
+print(max_orf)
+# Print the length of the longest ORF found
+max_nucleotide = ""
+# Variable to store the nucleotide sequence of the longest ORF
+for i in nucleotides:
+# Loop through all found ORFs to find the one with maximum length
+  if i[0] == max_orf:
+# Check if current ORF has the maximum length      
+    max_nucleotide = sequence[i[1]:i[2]]
+# Extract the nucleotide sequence using start and stop indices    
+
+print(max_nucleotide) 
+# Print the nucleotide sequence of the longest ORF
+
+sequence[1962:2910] 
+# Checking a specific region of the sequence for debugging purposes
+
+
+
+from Bio.Seq import Seq
+# Import Biopython's Seq class for biological sequence operations
+
+protein_sequence = Seq(max_nucleotide).translate()
+# Convert the nucleotide string to a Biopython Seq object and translate to protein
+# The translate() method converts DNA triplets to amino acids using genetic code
+
+print(f"ORF nucleotide length: {len(max_nucleotide)} bp")
+print(f"Translated protein length: {len(protein_sequence)} amino acids")
+print(f"Protein sequence: {protein_sequence}")
+# Print information about the translation results
+
+file_name = "mc1r_sequence.fasta"
+with open(file_name, "a") as file:
+# Reopen the FASTA file in append mode ('a' adds to existing content)
+    file.write(f"\n>MC1R_protein_from_longest_ORF\n")
+# Write protein header line    
+    file.write(str(protein_sequence))
+# Write the protein sequence (convert Seq object to string)    
+
+print(f"Protein sequence appended to {file_name}")
+
+
+homology_url = f"https://rest.ensembl.org/homology/id/human/{ensemble_id}?"
+# Construct URL for Ensembl homology API to find similar genes in other species
+params = {
+    "content-type": "application/json",
+}
+# Define parameters for the API request (we want JSON format response)
+
+
+response = requests.get(homology_url, params=params)
+# Make API request to get homology data
+
+
+homology_data = response.json()
+# Convert JSON response to Python dictionary
+species_set = set() 
+# Create a set to store unique species names 
+homology_data 
+# Display homology data
+
+if 'data' in homology_data and len(homology_data['data']) > 0:
+# Check if homology data exists and has content
+  homologies = homology_data['data'][0].get('homologies', [])
+# Extract the list of homologous genes from the data structure
+  for homology in homologies:
+# Loop through each homologous gene found      
+      if 'target' in homology and 'species' in homology['target']:
+# Check if the homology entry has target species information          
+          species_name = homology['target']['species']
+# Get the scientific species name          
+
+          readable_name = species_name.replace('_', ' ').title()
+# Convert to readable format: replace underscores with spaces and capitalize species names          
+          species_set.add(readable_name) 
+# Add to set           
+
+species_set
+# Display the set of unique species once again for the purpose of debugging
+output_file = "mc1r_homology_list.txt"
+# Define output filename for the homology list
+with open(output_file, 'w') as f:
+# Open the file in write mode to create the species list    
+    for species in species_set:
+# Loop through each species in the set        
+        f.write(species + '\n') 
+# Write each species name on its own line and add newline character 
