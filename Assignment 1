@@ -1,0 +1,25 @@
+#!/bin/bash
+# This is the shebang line which tells the system that this script should be executed in the bash shell
+
+motiffilename=interesting_motifs.txt
+# Creates a variable storing the name of the file containing motifs
+fastafilename=r_bifella.fasta
+# Creates a variable storing the FASTA file name
+
+for line in $(cat "$motiffilename"); do
+# Loop command which instructs the program to read the motifs file line by line
+# There is also a command substitution being used. It executes cat command and uses its output
+ 	grep -oE $line $fastafilename | sort | uniq -c >> motif_count.txt
+# -o is to only output the matching parts, not the whole line
+# -E is extended regular expressions which allows regex patterns
+# $Line is the current motif from the loop
+# | sort is used to sort all found motif alphabetically
+# | uniq -c is used to count the occurrence of each unique motif
+# >> motif_count.txt appends results to the output file
+	grep -B1 $line $fastafilename | tr -d '-' > motifs/$line.fasta
+# This is the second command in the loop
+# -B1 grep command shows 1 or more lines before a match. It gets both the FASTA header and the sequence line containing the motif. 
+# tr is used to delete dash characters. grep -B1 adds separators between matches which needs to be removed. 
+# > used to overwrite output file which creates a new file each time
+# motifs/$line.fasta saves to subdirectory "motifs" with filename based on motifs	
+done
