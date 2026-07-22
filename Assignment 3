@@ -1,0 +1,182 @@
+#!/bin/bash
+
+lstring="$(grep -E '((2[0-9]|30).*Sequenced)' clinical_data.txt | awk '{print $NF}')"
+
+# Complex one line code. So the grep -E is extended regex search
+# 2[0-9]|30).*Sequenced: This is a pattern
+# 2[0-9] Numbers 20-29 or 30
+# .* any characters in between
+# Sequenced only those in the clinical data that are sequenced
+# Finds lines that are 20-30 mm in diameter and that are sequenced. 
+# awk '{print $NF}')": Necessary to print the last field where the code names are.  
+
+for line in $lstring; do
+# lstring contains the code names of organisms that meet the criteria
+# Loops through each code_name stored in lstring
+# line variable gets each code name one by one
+
+    cp /home/rbif/week4/exomes/"$line".fasta exomesCohort/.
+# Copies FASTA files from source to destination
+# "$line".fasta: This constructs the filename like fox.fasta
+done
+
+# This ends the for loop
+
+#!/bin/bash
+
+for fasta_file in exomesCohort/*.fasta; do
+# Loops through all fasta files in exomes cohort directory. 
+# fasta_file variable gets each file name one by one. 
+	base_name=$(basename "$fasta_file" .fasta)
+# Extracts base name without .fasta extension. 
+# fox.fasta is now just fox	
+	output_file="${base_name}_topmotifs.fasta"
+# Creates output file name by appending _topmotifs.fasta
+
+	top_motifs=$(
+# Starts command substitution, captures output into _topmotifs variable	
+		while read motif; do
+# Reads each motif from motif_list.txt line by line 			
+			count=$(grep -o "$motif" "$fasta_file" | wc -l)
+# counts occurences of each motif in the FASTA file
+# grep -o finds all matches, wc -l counts them			
+			echo "$count:$motif"
+# Output count and motif spearated by colon			
+		done < motif_list.txt | sort -nr | head -3 | cut -d':' -f2 
+	)
+# End while loop, reads from motif_list.txt 
+# sort -nr: sort numerically in reverse order
+# head -3: take top 3 results
+# cut -d':' -f2: extract only the motif part after colon
+        echo "Top motifs:"
+	echo "$top_motifs"
+# Print the top motifs found	
+
+	pattern=$(echo "$top_motifs" | tr '\n' '|' | sed 's/|$//') 
+# Convert motifs to regex patterns
+# tr '\n' ': Replace newlines with pipe characters
+# sed 's/|$//': remove trailing pipe
+ 
+	awk -v pattern="$pattern" '
+# Starts awk script with pattern as a variable 
+	/^>/  {
+# When line starts with >, this is the FASTA header line	     
+	  if (sequence != "" && sequence ~ pattern) {
+		     print header 
+		     print sequence
+	     } 
+# If we have accumulated a sequence and it matches our pattern, print the header and sequence	     
+	     header = $0
+	     sequence = ""
+	     next
+        } 
+# Store new header and reset sequence for new entry
+# next: skip to next line and do not process header as sequence.         
+	{
+             sequence = sequence $0
+
+	}
+# Accumulate sequence data for non header lines	
+	END {
+	    if (sequence != "" && sequence ~ pattern) {
+		print header
+		print sequence
+	    }
+	} 
+# After processing all lines, check the last sequence. If it matches, print that oen too.         
+	' "$fasta_file" > "$output_file" 
+# End awk script, redirect output to output file 
+done
+# End the for loop
+
+#!/bin/bash
+
+for precrispr_file in *_precrispr.fasta; do
+# This program starts a loop. 
+# *_precrispr.fasta is a wildcard pattern that matches all files ending with _precrispr.fasta
+# precrispr_file is the variable name that will hold each file one by one
+# This loop will iterate through all matching files.  	
+	base_name=$(basename "$precrispr_file" _precrispr.fasta)
+# A variable called base name is created
+# $(..) = command substitution
+# basename command written again to extract just the file name without path and suffix
+# "$precrispr_file" is the current file name
+# _precrispr.fasta is the suffix to remove 
+# The result would be fox_precrispr.fasta turned into just fox  	
+	output_file="${base_name}_postcrispr.fasta"
+# output_file is a variable for the file name
+# On the right side of the equal sign is where the new file name will be constructed. 
+# ${base_name} expands to the base name
+# An example of what the result would be is fox_postcrispr.fasta 	
+
+	sed 's/.GG/A&/g' "$precrispr_file" > "$output_file"
+# sed is a stream editor used for text transformation
+# s/ is a substitute command
+# .GG is the pattern to find
+# . matches any single character then GG
+# A& is the replacement pattern. A followed by & which means the matched pattern
+# /g = global replacement, replace all occurrences, not just the first one.  	
+
+done 
+# Ends the for loop
+
+#!/bin/bash
+
+for topmotifs_file in *_topmotifs.fasta; do
+# Finds all files in the current directory ending with _topmotifs.fasta and processes each one
+	base_name=$(basename "$topmotifs_file" _topmotifs.fasta)
+# Extracts base file name, removes the _topmotifs.fasta suffix to get the origianl sample name
+# For example: fox_topmotifs.fasta would just be fox
+# $(...) is simply the command substitution	
+	output_file="${base_name}_precrispr.fasta"
+# Creates the output file name and appends _precrispr.fasta 	
+
+	awk '
+# Starts an awk script to process fasta files
+	/^>/ {
+# This makes the awk command detect the fasta header
+# When awk encounters a header line, it will execute the block below	
+	if (sequence != "" && sequence ~ /.{20,}.GG/) {
+# Check previous sequence. Before processing a new header, check if we have a completed sequence that meets our criteria. 
+# sequence != "": This checks if we have accumulated a sequence. 
+# sequence ~ /.{20,}.GG/ This checks if the sequence matches our pattern 
+# .{20,} at least 20 of any characters. 
+# .GG Any character followed by GG which is the NGG PAM site. 
+ 		
+	   print header 
+	   print sequence
+	}
+# Outputs matching sequence. If the sequence is true, print the header and sequence to the output. 
+# Print header: outputs the sequence header
+# Print sequence: Outputs the full dna sequence       	
+	   header = $0
+# Stores the current line as the new header	   
+	   sequence = ""
+# Reset the sequence accumulator to empty	   
+	   next
+# Skips to the next line immediately	   
+
+	}
+# End of header processing block. 	
+	{
+	   sequence = sequence $0
+	}
+# This is the default action for all lines. 
+# This block runs for every line that does not match the header pattern. 
+# sequence = sequence $0 Append the current line to the accumulated sequence. 
+# This reconstructs multi line FASTA sequences into single strings
+	END {
+# End of block processing, this block executes after awk has processed all input files. 	
+	if (sequence != "" && sequence ~ /.{20,}.GG/) {  
+# After reading the entire file, check the entire sequence. 
+		print header
+		print sequence
+# Output the final sequence. If the last sequence matches, print it. 		
+	    }
+	}
+# End of END processing block. Close the end processing block.        	
+	' "$topmotifs_file" > "$output_file" 
+# Closes awk program and redirects output	
+done
+
+# End the for loop. 
